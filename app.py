@@ -34,36 +34,65 @@ if attendance_file and requirements_file:
     if st.button("🚀 Auto Allocate Workers"):
 
         priority_map = {"High": 1, "Medium": 2, "Low": 3}
-        requirements_df["Priority_Order"] = requirements_df["Priority"].map(priority_map)
-        requirements_df = requirements_df.sort_values("Priority_Order")
+requirements_df["Priority_Order"] = requirements_df["Priority"].map(priority_map)
+requirements_df = requirements_df.sort_values("Priority_Order")
 
-        attendance_df["Assigned"] = False
-        allocations = []
+attendance_df["Assigned"] = False
+allocations = []
+shortfall = []
 
-        for _, req in requirements_df.iterrows():
-            skill = req["Skill"]
-            needed = req["Required_Workers"]
-            line = req["Production_Line"]
+available_workers = len(attendance_df)
 
-            eligible = attendance_df[
-                (attendance_df["Skill"] == skill) &
-                (attendance_df["Assigned"] == False)
-            ]
+for _, req in requirements_df.iterrows():
+    if available_workers <= 0:
+        shortfall.append({
+            "Production_Line": req["Production_Line"],
+            "Skill": req["Skill"],
+            "Required": req["Required_Workers"],
+            "Allocated": 0,
+            "Shortfall": req["Required_Workers"]
+        })
+        continue
 
-            selected = eligible.head(needed)
+    skill = req["Skill"]
+    required = req["Required_Workers"]
+    line = req["Production_Line"]
+    priority = req["Priority"]
 
-            for _, worker in selected.iterrows():
-                allocations.append({
-                    "Worker_ID": worker["Worker_ID"],
-                    "Name": worker["Name"],
-                    "Skill": worker["Skill"],
-                    "Skill_Level": worker["Skill_Level"],
-                    "Production_Line": line
-                })
+    eligible = attendance_df[
+        (attendance_df["Skill"] == skill) &
+        (attendance_df["Assigned"] == False)
+    ]
+
+    allocated_count = min(len(eligible), required)
+    selected = eligible.head(allocated_count)
+
+    for _, worker in selected.iterrows():
+        allocations.append({
+            "Worker_ID": worker["Worker_ID"],
+            "Name": worker["Name"],
+            "Skill": worker["Skill"],
+            "Skill_Level": worker["Skill_Level"],
+            "Production_Line": line,
+            "Priority": priority
+        })
+
+    attendance_df.loc[selected.index, "Assigned"] = True
+    available_workers -= allocated_count
+
+    if allocated_count < required:
+        shortfall.append({
+            "Production_Line": line,
+            "Skill": skill,
+            "Required": required,
+            "Allocated": allocated_count,
+            "Shortfall": required - allocated_count
+        })
 
             attendance_df.loc[selected.index, "Assigned"] = True
 
         allocation_df = pd.DataFrame(allocations)
+        shortfall_df = pd.DataFrame(shortfall)
 
         st.success("✅ Allocation Completed")
 
