@@ -6,7 +6,6 @@ st.set_page_config(page_title="Worker Auto Allocation", layout="wide")
 st.title("🏭 Smart Worker Allocation System")
 st.write("Upload attendance and line requirements to auto-assign workers")
 
-# Upload files
 attendance_file = st.file_uploader(
     "Upload Attendance Excel (with Day sheets)",
     type=["xlsx"]
@@ -33,87 +32,96 @@ if attendance_file and requirements_file:
 
     if st.button("🚀 Auto Allocate Workers"):
 
+        # ---- PRIORITY SORTING ----
         priority_map = {"High": 1, "Medium": 2, "Low": 3}
-requirements_df["Priority_Order"] = requirements_df["Priority"].map(priority_map)
-requirements_df = requirements_df.sort_values("Priority_Order")
+        requirements_df["Priority_Order"] = requirements_df["Priority"].map(priority_map)
+        requirements_df = requirements_df.sort_values("Priority_Order")
 
-attendance_df["Assigned"] = False
-allocations = []
-shortfall = []
+        # ---- INITIALIZE ----
+        attendance_df["Assigned"] = False
+        allocations = []
+        shortfall = []
 
-available_workers = len(attendance_df)
+        available_workers = len(attendance_df)
 
-for _, req in requirements_df.iterrows():
-    if available_workers <= 0:
-        shortfall.append({
-            "Production_Line": req["Production_Line"],
-            "Skill": req["Skill"],
-            "Required": req["Required_Workers"],
-            "Allocated": 0,
-            "Shortfall": req["Required_Workers"]
-        })
-        continue
+        # ---- ALLOCATION LOOP ----
+        for _, req in requirements_df.iterrows():
 
-    skill = req["Skill"]
-    required = req["Required_Workers"]
-    line = req["Production_Line"]
-    priority = req["Priority"]
+            skill = req["Skill"]
+            required = req["Required_Workers"]
+            line = req["Production_Line"]
+            priority = req["Priority"]
 
-    eligible = attendance_df[
-        (attendance_df["Skill"] == skill) &
-        (attendance_df["Assigned"] == False)
-    ]
+            if available_workers <= 0:
+                shortfall.append({
+                    "Production_Line": line,
+                    "Skill": skill,
+                    "Required": required,
+                    "Allocated": 0,
+                    "Shortfall": required
+                })
+                continue
 
-    allocated_count = min(len(eligible), required)
-    selected = eligible.head(allocated_count)
+            eligible = attendance_df[
+                (attendance_df["Skill"] == skill) &
+                (attendance_df["Assigned"] == False)
+            ]
 
-    for _, worker in selected.iterrows():
-        allocations.append({
-            "Worker_ID": worker["Worker_ID"],
-            "Name": worker["Name"],
-            "Skill": worker["Skill"],
-            "Skill_Level": worker["Skill_Level"],
-            "Production_Line": line,
-            "Priority": priority
-        })
+            allocated_count = min(len(eligible), required)
+            selected = eligible.head(allocated_count)
 
-    attendance_df.loc[selected.index, "Assigned"] = True
-    available_workers -= allocated_count
-
-    if allocated_count < required:
-        shortfall.append({
-            "Production_Line": line,
-            "Skill": skill,
-            "Required": required,
-            "Allocated": allocated_count,
-            "Shortfall": required - allocated_count
-        })
+            for _, worker in selected.iterrows():
+                allocations.append({
+                    "Worker_ID": worker["Worker_ID"],
+                    "Name": worker["Name"],
+                    "Skill": worker["Skill"],
+                    "Skill_Level": worker["Skill_Level"],
+                    "Production_Line": line,
+                    "Priority": priority
+                })
 
             attendance_df.loc[selected.index, "Assigned"] = True
+            available_workers -= allocated_count
 
+            if allocated_count < required:
+                shortfall.append({
+                    "Production_Line": line,
+                    "Skill": skill,
+                    "Required": required,
+                    "Allocated": allocated_count,
+                    "Shortfall": required - allocated_count
+                })
+
+        # ---- OUTPUT DATA ----
         allocation_df = pd.DataFrame(allocations)
         shortfall_df = pd.DataFrame(shortfall)
 
         st.success("✅ Allocation Completed")
 
-        col1, col2 = st.columns(2)
+        # ---- METRICS ----
+        st.subheader("📈 Daily Manpower Summary")
+        st.metric("Workers Present", len(attendance_df))
+        st.metric("Total Requirement", requirements_df["Required_Workers"].sum())
+        st.metric("Total Allocated", len(allocation_df))
+        st.metric("Total Shortfall", shortfall_df["Shortfall"].sum())
 
-        with col1:
-            st.metric("Total Present", len(attendance_df))
-            st.metric("Allocated", len(allocation_df))
-            st.metric("Unassigned", len(attendance_df) - len(allocation_df))
+        # ---- PRIORITY VIEW ----
+        st.subheader("📊 Allocation by Priority")
+        st.dataframe(
+            allocation_df["Priority"]
+            .value_counts()
+            .reset_index()
+            .rename(columns={"index": "Priority", "Priority": "Workers Allocated"})
+        )
 
-        with col2:
-            st.write("📊 Allocation by Line")
-            st.dataframe(
-                allocation_df["Production_Line"].value_counts().reset_index()
-                .rename(columns={"index": "Line", "Production_Line": "Workers"})
-            )
+        # ---- SHORTFALL ----
+        st.subheader("⚠️ Unfulfilled Requirements (Due to Manpower Shortage)")
+        st.dataframe(shortfall_df)
 
+        # ---- FINAL OUTPUT ----
         st.subheader("📤 Allocation Output")
         st.dataframe(allocation_df)
 
-        # Download
         output_file = f"{day}_Auto_Allocation.xlsx"
         allocation_df.to_excel(output_file, index=False)
 
