@@ -19,11 +19,11 @@ requirements_file = st.file_uploader(
 
 if attendance_file and requirements_file:
 
-    attendance_xl = pd.ExcelFile(attendance_file)
+    attendance_xl = pd.ExcelFile(attendance_file, engine="openpyxl")
     day = st.selectbox("Select Day", attendance_xl.sheet_names)
 
     attendance_df = attendance_xl.parse(day)
-    requirements_df = pd.read_excel(requirements_file)
+    requirements_df = pd.read_excel(requirements_file, engine="openpyxl")
 
     st.subheader("📋 Attendance Preview")
     st.dataframe(attendance_df.head())
